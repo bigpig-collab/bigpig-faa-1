@@ -133,7 +133,7 @@ def sd_changes(prices, window):
 
 def sigma_for(prices):
     """This market's spread: the average realised volatility over the
-    short and the long window, clamped, then scaled by the square
+    fast, short and long windows, clamped, then scaled by the square
     root of the price level relative to LEVEL_REF, then clamped
     again. A high-priced market moves further in absolute terms
     than a low-priced one at the same relative volatility."""
