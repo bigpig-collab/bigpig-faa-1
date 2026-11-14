@@ -6,9 +6,10 @@ writes one <id>.out forecast to $MAKEFUN_OUTPUT_DIR (else /output/) for
 each. Python 3.13 standard library only, no network, deterministic.
 
 Method, per market, from that market's own price history only. This is
-v2 of the forecaster; v1 used the house baseline's Gaussian shape with a
-per-market sigma and scored 0.276 on the practice. v2 keeps v1's centre
-and volatility estimator and changes the shape and the level scaling:
+v3 of the forecaster; v2 used the average of the 30- and 120-minute
+realised volatilities's Gaussian shape with a
+per-market sigma and scored 0.276 on the practice. v3 keeps v2's centre, shape and level scaling and changes exactly
+one thing: the volatility estimator (see below).
 
   * Centre: the last price (persistence). Drift is zero. A drift was
     tested thoroughly and does not survive leave-one-case-out
@@ -20,13 +21,18 @@ and volatility estimator and changes the shape and the level scaling:
     gain is within noise. The median future change is zero for
     essentially every group of markets, so the last price is the
     honest median.
-  * Volatility: the average realised per-minute standard deviation
-    over the last 30 and the last 120 minutes, clamped to
-    [0.0005, 0.004] exactly as in v1. A short window tracks the
-    market's current regime (prices move in steps: flat for minutes,
-    then a tick or a jump) and averaging two windows steadies it.
-    Longer windows, EWMA volatility and jump-boosted volatility were
-    all tried and all made the loss worse.
+  * Volatility (the ONE change vs v2): the average realised
+    per-minute standard deviation over the last 15, 30 and 120
+    minutes, clamped to [0.0005, 0.004] exactly as in v2. The
+    15-minute window tracks the market's current regime faster
+    (prices move in steps: flat for minutes, then a tick or a
+    jump); averaging three windows steadies it. Longer windows
+    (240/480/720 min blends), EWMA volatility, jump-boosted
+    volatility, a horizon power below 0.5, sigma multipliers and
+    centre shrinkage were all tried in the v3 sprint and all made
+    the loss worse or no better; a z-vector re-tune (z25 -0.7)
+    won a hair on the all-6 number but LOST on the low-price
+    (final-regime) subset, so it was rejected.
   * Level scaling: the volatility is multiplied by sqrt(price / 0.05)
     and then clamped to [0.0003, 0.004]. A market priced at 0.30
     moves about twice as far in absolute terms as one priced at
@@ -49,13 +55,15 @@ and volatility estimator and changes the shape and the level scaling:
     to [0, 1], rounded to 6 decimals, forced non-decreasing.
 
 Practice (NVIDIA CEO event, real answers fetched from Polymarket):
-mean pinball loss 0.260881 against v1's 0.276231 and the baseline's
-0.363589. Leave-one-case-out mean held-out loss 0.274815 against
-v1's 0.285941, so the improvement generalises. The 0.21 target was
+mean pinball loss 0.259983 against v2's 0.260881, v1's 0.276231 and
+the baseline's 0.363589. Leave-one-case-out (z re-tuned per fold,
+windows fixed at 15/30/120) mean held-out loss 0.273874 against
+v2's 0.275003, so the improvement generalises; it also beats v2
+on the low-price subset (price < 0.05: 0.154078 vs 0.154840), the
+closest proxy for the final's four FAA markets (all priced
+0.006-0.0425). The gain is small (-0.34%) and the 0.21 target was
 not reached with legitimate methods: the centre is the dominant
-term and it is news-driven and unpredictable from price history,
-and every other legitimate shape, spread, drift, smoothing and
-cross-market idea tested made the loss worse or no better.
+term and it is news-driven and unpredictable from price history.
 """
 
 import json
@@ -81,7 +89,9 @@ SIGMA_FLOOR = 0.0003
 SIGMA_CAP = 0.004
 # The price at which the level scaling is 1.
 LEVEL_REF = 0.05
-# The two windows (minutes) whose realised volatilities are averaged.
+# The three windows (minutes) whose realised volatilities are averaged.
+# v2 used (30, 120); v3 adds the 15-minute window.
+WIN_FAST = 15
 WIN_SHORT = 30
 WIN_LONG = 120
 # Fallbacks for a market with no usable history.
@@ -127,7 +137,8 @@ def sigma_for(prices):
     root of the price level relative to LEVEL_REF, then clamped
     again. A high-priced market moves further in absolute terms
     than a low-priced one at the same relative volatility."""
-    raw = (sd_changes(prices, WIN_SHORT) + sd_changes(prices, WIN_LONG)) / 2.0
+    raw = (sd_changes(prices, WIN_FAST) + sd_changes(prices, WIN_SHORT)
+           + sd_changes(prices, WIN_LONG)) / 3.0
     if raw < RAW_FLOOR:
         raw = RAW_FLOOR
     if raw > RAW_CAP:
