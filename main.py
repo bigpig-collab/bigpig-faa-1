@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Forecast Polymarket Yes prices 240 minutes ahead, five quantiles a minute.
 
-Reads every <id>.in case file from $MAKEFUN_INPUT_DIR (else /input/) and
-writes one <id>.out forecast to $MAKEFUN_OUTPUT_DIR (else /output/) for
-each. Python 3.13 standard library only, no network, deterministic.
+For every <id>.in case file in $MAKEFUN_INPUT_DIR (else /input/) it
+writes one <id>.out forecast to $MAKEFUN_OUTPUT_DIR (else /output/).
+Python 3.13 standard library only, no network, deterministic.
 
 Method, per market, from that market's own price history only. This is
 v3 of the forecaster; v2 used the average of the 30- and 120-minute
@@ -33,7 +33,7 @@ one thing: the volatility estimator (see below).
     the loss worse or no better; a z-vector re-tune (z25 -0.7)
     won a hair on the all-6 number but LOST on the low-price
     (final-regime) subset, so it was rejected.
-  * Level scaling: the volatility is multiplied by sqrt(price / 0.05)
+  * Level scaling: sigma is multiplied by sqrt(price / 0.05)
     and then clamped to [0.0003, 0.004]. A market priced at 0.30
     moves about twice as far in absolute terms as one priced at
     0.05 with the same relative volatility, and the practice bears
